@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: acebank
+    runtime: java
+    buildCommand: './mvnw clean package -DskipTests'
+    startCommand: 'java -jar target/ace-bank-lite-1.0-SNAPSHOT.jar'
+    envVars:
+      - key: DB_URL
+        sync: false
+      - key: DB_USER
+        sync: false
+      - key: DB_PASSWORD
+        sync: false
+      - key: MAIL_ADDRESS
+        sync: false
+      - key: MAIL_APP_PASSWORD
+        sync: false
