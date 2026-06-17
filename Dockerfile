@@ -24,7 +24,7 @@ WORKDIR /app
 
 COPY --from=builder /app/target/ace-bank-lite-1.0-SNAPSHOT.jar app.jar
 
-# Render injects PORT at runtime
-EXPOSE 8081
+# Render injects PORT at runtime (default 10000)
+EXPOSE 10000
 
 ENTRYPOINT ["java", "-jar", "app.jar"]
