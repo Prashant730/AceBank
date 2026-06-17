@@ -8,6 +8,8 @@ public class IndexController {
 
     @GetMapping("/")
     public String index() {
-        return "forward:/index.jsp";
+        // Uses the view resolver: prefix=/WEB-INF/views/ suffix=.jsp
+        // But index.jsp lives in webapp root, so we redirect to it directly
+        return "redirect:/index.jsp";
     }
 }
