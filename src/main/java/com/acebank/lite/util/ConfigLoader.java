@@ -2,13 +2,24 @@ package com.acebank.lite.util;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.Map;
 import java.util.Properties;
 
 public class ConfigLoader {
     private static final Properties properties = new Properties();
 
+    /**
+     * Maps property-file keys to their Render/environment variable equivalents.
+     * Render injects uppercase, underscore-separated names.
+     */
+    private static final Map<String, String> ENV_KEY_MAP = Map.of(
+            ConfigKeys.DB_URL, "DB_URL",
+            ConfigKeys.DB_USER, "DB_USER",
+            ConfigKeys.DB_PWD, "DB_PASSWORD",
+            ConfigKeys.MAIL_ADDR, "MAIL_ADDRESS",
+            ConfigKeys.MAIL_PWD, "MAIL_APP_PASSWORD");
+
     static {
-        // Look for the file in the src/main/resources folder
         try (InputStream is = ConfigLoader.class.getClassLoader()
                 .getResourceAsStream(ConfigKeys.DEV_PROPERTIES)) {
 
@@ -23,18 +34,28 @@ public class ConfigLoader {
     }
 
     /**
-     * Retrieves a property value.
-     * It checks Environment Variables first (great for Render!)
-     * and falls back to the properties file.
+     * Returns a property value.
+     * Resolution order:
+     * 1. Known Render env var name (from ENV_KEY_MAP)
+     * 2. Auto-derived env var name (dots → underscores, uppercased)
+     * 3. application-dev.properties value
      */
     public static String getProperty(String key) {
-        // Priority 1: Check System Environment (Render/Docker)
-        String envValue = System.getenv(key.replace(".", "_").toUpperCase());
+        // 1. Check explicit Render env var mapping
+        String envKey = ENV_KEY_MAP.get(key);
+        if (envKey != null) {
+            String val = System.getenv(envKey);
+            if (val != null && !val.isBlank())
+                return val;
+        }
 
-        // I am giving priority to env variables
-        if (envValue != null) return envValue;
+        // 2. Auto-derive: "db.url" → "DB_URL"
+        String derivedKey = key.replace(".", "_").toUpperCase();
+        String derivedVal = System.getenv(derivedKey);
+        if (derivedVal != null && !derivedVal.isBlank())
+            return derivedVal;
 
-        // Priority 2: Check the properties file
+        // 3. Fall back to properties file
         return properties.getProperty(key);
     }
 }

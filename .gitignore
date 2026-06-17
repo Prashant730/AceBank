@@ -1,0 +1,64 @@
+# Maven
+target/
+.m2/
+*.jar
+*.war
+
+# IDE
+.vscode/
+.idea/
+*.iml
+*.iws
+*.ipr
+*.classpath
+*.project
+.settings/
+
+# OS
+.DS_Store
+Thumbs.db
+*.log
+
+# Environment
+.env
+.env.local
+application-dev.properties
+
+# Build files
+out/
+build/
+
+# Java
+*.class
+*.ctxt
+.mtj.tmp/
+*.jar
+*.war
+*.nar
+.sts4-cache/
+
+# IntelliJ
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# Eclipse
+.project
+.classpath
+.c9/
+*.launch
+.settings/
+*.sublime-workspace
+
+# VS Code
+.vscode-test
+.history/
+
+# Node (if any)
+node_modules/
+npm-debug.log*
+
+# Database
+*.db
+*.sqlite

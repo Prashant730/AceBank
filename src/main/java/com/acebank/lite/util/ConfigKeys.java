@@ -22,5 +22,5 @@ public class ConfigKeys {
     public static final String DB_USER = "db.user";
     public static final String DB_PWD = "db.password";
     public static final String DB_SCRIPT_PATH = "db.script.path";
-    public static final String DB_MYSQL_DRIVER = "db.mysql.driver";
+    public static final String DB_MYSQL_DRIVER = "db.driver";
 }
