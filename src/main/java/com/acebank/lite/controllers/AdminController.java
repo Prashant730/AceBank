@@ -1,167 +1,98 @@
 package com.acebank.lite.controllers;
 
-import com.acebank.lite.models.AdminStats;
-import com.acebank.lite.models.Transaction;
-import com.acebank.lite.models.UserAccountInfo;
 import com.acebank.lite.util.ConnectionManager;
-import jakarta.servlet.http.HttpSession;
-import lombok.extern.java.Log;
-import org.springframework.stereotype.Controller;
-import org.springframework.ui.Model;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RestController;
 
-import java.math.BigDecimal;
-import java.sql.*;
-import java.util.ArrayList;
-import java.util.List;
+import java.sql.Connection;
+import java.sql.Statement;
 
-@Log
-@Controller
-@RequestMapping("/admin")
+@RestController
 public class AdminController {
 
-    private static final String ADMIN_USER = "admin";
-    private static final String ADMIN_PASS = "admin123";
+    @GetMapping("/admin/reset-db")
+    public String resetDatabase() {
+        try (Connection conn = ConnectionManager.getConnection();
+                Statement stmt = conn.createStatement()) {
 
-    @GetMapping("/login")
-    public String showLogin() {
-        return "forward:/admin-login.jsp";
-    }
+            // Drop all tables
+            stmt.execute("DROP TABLE IF EXISTS TRANSACTIONS CASCADE");
+            stmt.execute("DROP TABLE IF EXISTS ACCOUNTS CASCADE");
+            stmt.execute("DROP TABLE IF EXISTS USERS CASCADE");
 
-    @PostMapping("/login")
-    public String processLogin(@RequestParam String username,
-                                @RequestParam String password,
-                                HttpSession session) {
-        if (ADMIN_USER.equals(username) && ADMIN_PASS.equals(password)) {
-            session.setAttribute("isAdmin", true);
-            session.setAttribute("adminUser", username);
-            return "redirect:/admin/dashboard";
-        }
-        return "redirect:/admin/login?error=true";
-    }
+            // Recreate tables
+            stmt.execute("""
+                        CREATE TABLE USERS (
+                            USER_ID    SERIAL PRIMARY KEY,
+                            FIRST_NAME VARCHAR(255) NOT NULL,
+                            LAST_NAME  VARCHAR(255) NOT NULL,
+                            AADHAAR_NO VARCHAR(12)  UNIQUE NOT NULL,
+                            EMAIL      VARCHAR(255) UNIQUE NOT NULL,
+                            PASSWORD_HASH VARCHAR(255) NOT NULL,
+                            CREATED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        )
+                    """);
 
-    @GetMapping("/dashboard")
-    public String dashboard(Model model, HttpSession session) {
-        if (!isAdmin(session)) return "redirect:/admin/login";
+            stmt.execute("""
+                        CREATE TABLE ACCOUNTS (
+                            ACCOUNT_NO   INT PRIMARY KEY,
+                            USER_ID      INT,
+                            ACCOUNT_TYPE VARCHAR(10) NOT NULL DEFAULT 'SAVINGS'
+                                CHECK (ACCOUNT_TYPE IN ('SAVINGS', 'CHECKING', 'LOAN')),
+                            BALANCE      DECIMAL(15, 2) NOT NULL DEFAULT 0.00,
+                            STATUS       VARCHAR(10) NOT NULL DEFAULT 'ACTIVE'
+                                CHECK (STATUS IN ('ACTIVE', 'BLOCKED', 'CLOSED')),
+                            FOREIGN KEY (USER_ID) REFERENCES USERS(USER_ID) ON DELETE CASCADE
+                        )
+                    """);
 
-        try {
-            model.addAttribute("stats", getStats());
-            model.addAttribute("users", getAllUsers());
-            model.addAttribute("transactions", getRecentTransactions());
+            stmt.execute("""
+                        CREATE TABLE TRANSACTIONS (
+                            ID               SERIAL PRIMARY KEY,
+                            SENDER_ACCOUNT   INT NULL,
+                            RECEIVER_ACCOUNT INT NULL,
+                            AMOUNT           DECIMAL(15, 2) NOT NULL,
+                            TX_TYPE          VARCHAR(15) NOT NULL
+                                CHECK (TX_TYPE IN ('TRANSFER', 'DEPOSIT', 'WITHDRAWAL')),
+                            REMARK           VARCHAR(255),
+                            CREATED_AT       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            FOREIGN KEY (SENDER_ACCOUNT) REFERENCES ACCOUNTS(ACCOUNT_NO)
+                        )
+                    """);
+
+            return "✅ Database reset successfully! All tables dropped and recreated.";
+
         } catch (Exception e) {
-            log.severe("Admin dashboard error: " + e.getMessage());
-            model.addAttribute("stats", new AdminStats(0, 0, BigDecimal.ZERO, 0));
-            model.addAttribute("users", List.of());
-            model.addAttribute("transactions", List.of());
+            return "❌ Error resetting database: " + e.getMessage();
         }
-
-        return "AdminDashboard";
     }
 
-    @PostMapping("/toggle-status")
-    public String toggleStatus(@RequestParam int accountNo,
-                               @RequestParam String currentStatus,
-                               HttpSession session) {
-        if (!isAdmin(session)) return "redirect:/admin/login";
-
-        String newStatus = "ACTIVE".equals(currentStatus) ? "BLOCKED" : "ACTIVE";
-
+    @GetMapping("/admin/db-status")
+    public String checkDatabase() {
         try (Connection conn = ConnectionManager.getConnection();
-             PreparedStatement ps = conn.prepareStatement(
-                 "UPDATE ACCOUNTS SET STATUS = ? WHERE ACCOUNT_NO = ?")) {
-            ps.setString(1, newStatus);
-            ps.setInt(2, accountNo);
-            ps.executeUpdate();
-            log.info("Account " + accountNo + " status changed to " + newStatus);
-        } catch (SQLException e) {
-            log.severe("Failed to toggle account status: " + e.getMessage());
+                Statement stmt = conn.createStatement()) {
+
+            var rs1 = stmt.executeQuery("SELECT COUNT(*) FROM USERS");
+            rs1.next();
+            int userCount = rs1.getInt(1);
+
+            var rs2 = stmt.executeQuery("SELECT COUNT(*) FROM ACCOUNTS");
+            rs2.next();
+            int accountCount = rs2.getInt(1);
+
+            var rs3 = stmt.executeQuery("SELECT COUNT(*) FROM TRANSACTIONS");
+            rs3.next();
+            int txCount = rs3.getInt(1);
+
+            return String.format("""
+                    📊 Database Status:
+                    - Users: %d
+                    - Accounts: %d
+                    - Transactions: %d
+                    """, userCount, accountCount, txCount);
+
+        } catch (Exception e) {
+            return "❌ Error checking database: " + e.getMessage();
         }
-
-        return "redirect:/admin/dashboard";
-    }
-
-    @GetMapping("/logout")
-    public String logout(HttpSession session) {
-        session.removeAttribute("isAdmin");
-        session.removeAttribute("adminUser");
-        return "redirect:/admin/login";
-    }
-
-    private boolean isAdmin(HttpSession session) {
-        return Boolean.TRUE.equals(session.getAttribute("isAdmin"));
-    }
-
-    // ---- Data Access ----
-
-    private AdminStats getStats() throws SQLException {
-        String sql = "SELECT " +
-            "(SELECT COUNT(*) FROM USERS) as totalUsers, " +
-            "(SELECT COUNT(*) FROM ACCOUNTS) as totalAccounts, " +
-            "(SELECT COALESCE(SUM(BALANCE), 0) FROM ACCOUNTS) as totalBalance, " +
-            "(SELECT COUNT(*) FROM TRANSACTIONS) as totalTransactions";
-
-        try (Connection conn = ConnectionManager.getConnection();
-             Statement stmt = conn.createStatement();
-             ResultSet rs = stmt.executeQuery(sql)) {
-            if (rs.next()) {
-                return new AdminStats(
-                    rs.getLong("totalUsers"),
-                    rs.getLong("totalAccounts"),
-                    rs.getBigDecimal("totalBalance"),
-                    rs.getLong("totalTransactions")
-                );
-            }
-        }
-        return new AdminStats(0, 0, BigDecimal.ZERO, 0);
-    }
-
-    private List<UserAccountInfo> getAllUsers() throws SQLException {
-        String sql = "SELECT u.USER_ID, u.FIRST_NAME, u.LAST_NAME, u.EMAIL, u.AADHAAR_NO, u.CREATED_AT, " +
-                     "a.ACCOUNT_NO, a.BALANCE, a.STATUS, a.ACCOUNT_TYPE " +
-                     "FROM USERS u LEFT JOIN ACCOUNTS a ON u.USER_ID = a.USER_ID " +
-                     "ORDER BY u.CREATED_AT DESC";
-
-        List<UserAccountInfo> users = new ArrayList<>();
-        try (Connection conn = ConnectionManager.getConnection();
-             Statement stmt = conn.createStatement();
-             ResultSet rs = stmt.executeQuery(sql)) {
-            while (rs.next()) {
-                users.add(new UserAccountInfo(
-                    rs.getInt("USER_ID"),
-                    rs.getString("FIRST_NAME"),
-                    rs.getString("LAST_NAME"),
-                    rs.getString("EMAIL"),
-                    rs.getString("AADHAAR_NO"),
-                    rs.getTimestamp("CREATED_AT") != null ? rs.getTimestamp("CREATED_AT").toLocalDateTime() : null,
-                    rs.getObject("ACCOUNT_NO") != null ? rs.getInt("ACCOUNT_NO") : null,
-                    rs.getBigDecimal("BALANCE"),
-                    rs.getString("STATUS"),
-                    rs.getString("ACCOUNT_TYPE")
-                ));
-            }
-        }
-        return users;
-    }
-
-    private List<Transaction> getRecentTransactions() throws SQLException {
-        String sql = "SELECT * FROM TRANSACTIONS ORDER BY CREATED_AT DESC LIMIT 50";
-
-        List<Transaction> txList = new ArrayList<>();
-        try (Connection conn = ConnectionManager.getConnection();
-             Statement stmt = conn.createStatement();
-             ResultSet rs = stmt.executeQuery(sql)) {
-            while (rs.next()) {
-                txList.add(new Transaction(
-                    rs.getInt("ID"),
-                    rs.getObject("SENDER_ACCOUNT") != null ? rs.getInt("SENDER_ACCOUNT") : null,
-                    rs.getObject("RECEIVER_ACCOUNT") != null ? rs.getInt("RECEIVER_ACCOUNT") : null,
-                    rs.getBigDecimal("AMOUNT"),
-                    rs.getString("TX_TYPE"),
-                    rs.getString("REMARK"),
-                    rs.getTimestamp("CREATED_AT") != null ? rs.getTimestamp("CREATED_AT").toLocalDateTime() : null
-                ));
-            }
-        }
-        return txList;
     }
 }
