@@ -22,10 +22,10 @@ FROM eclipse-temurin:21-jre-alpine
 
 WORKDIR /app
 
-COPY --from=builder /app/target/ace-bank-lite-1.0-SNAPSHOT.jar app.jar
+COPY --from=builder /app/target/ace-bank-lite-1.0-SNAPSHOT.war app.war
 
 # Render injects PORT env var, expose it
 EXPOSE ${PORT:-10000}
 
 # Start with dynamic port from Render's PORT env var
-ENTRYPOINT ["sh", "-c", "java -jar app.jar --server.port=${PORT:-10000}"]
+ENTRYPOINT ["sh", "-c", "java -jar app.war --server.port=${PORT:-10000}"]
