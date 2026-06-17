@@ -5,8 +5,9 @@ import org.mindrot.jbcrypt.BCrypt;
 public class PasswordUtil {
 
     // Hash a password for the first time
+    // Work factor 10 = faster on low-CPU instances (still secure)
     public static String hashPassword(String plainTextPassword) {
-        return BCrypt.hashpw(plainTextPassword, BCrypt.gensalt(12));
+        return BCrypt.hashpw(plainTextPassword, BCrypt.gensalt(10));
     }
 
     // Check that a plain text password matches a previously hashed one

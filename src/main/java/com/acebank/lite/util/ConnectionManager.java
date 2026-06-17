@@ -1,27 +1,49 @@
 package com.acebank.lite.util;
 
+import com.zaxxer.hikari.HikariConfig;
+import com.zaxxer.hikari.HikariDataSource;
 import org.apache.ibatis.jdbc.ScriptRunner;
 
 import java.io.BufferedReader;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.sql.Connection;
-import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.util.logging.Logger;
 
-//@Log
 public final class ConnectionManager {
 
     private static boolean isSchemaInitialized = false;
+    private static HikariDataSource dataSource;
     static final Logger log = Logger.getLogger(ConnectionManager.class.getName());
-
 
     private ConnectionManager() {
     }
 
+    static {
+        try {
+            HikariConfig config = new HikariConfig();
+            config.setJdbcUrl(ConfigLoader.getProperty(ConfigKeys.DB_URL));
+            config.setUsername(ConfigLoader.getProperty(ConfigKeys.DB_USER));
+            config.setPassword(ConfigLoader.getProperty(ConfigKeys.DB_PWD));
+            config.setDriverClassName(ConfigLoader.getProperty(ConfigKeys.DB_MYSQL_DRIVER));
+
+            // Connection pool settings for Render free tier
+            config.setMaximumPoolSize(5);
+            config.setMinimumIdle(2);
+            config.setConnectionTimeout(10000);
+            config.setIdleTimeout(300000);
+            config.setMaxLifetime(600000);
+
+            dataSource = new HikariDataSource(config);
+            log.info("Connection pool initialized.");
+        } catch (Exception e) {
+            log.severe("Failed to initialize connection pool: " + e.getMessage());
+        }
+    }
+
     public static synchronized Connection getConnection() throws SQLException {
-        Connection connection = createConnection();
+        Connection connection = dataSource.getConnection();
 
         // Run the script ONLY ONCE on the very first successful connection
         if (connection != null && !isSchemaInitialized) {
@@ -29,30 +51,10 @@ public final class ConnectionManager {
             if (scriptPath != null) {
                 runInitScript(connection, scriptPath);
             }
-            isSchemaInitialized = true; // Set flag so it never runs again
+            isSchemaInitialized = true;
         }
 
         return connection;
-    }
-
-    private static Connection createConnection() throws SQLException {
-        try {
-            String url = ConfigLoader.getProperty(ConfigKeys.DB_URL);
-            String user = ConfigLoader.getProperty(ConfigKeys.DB_USER);
-            String pass = ConfigLoader.getProperty(ConfigKeys.DB_PWD);
-            String driverName = ConfigLoader.getProperty(ConfigKeys.DB_MYSQL_DRIVER);
-
-            Class.forName(driverName);//VVI
-            Connection conn = DriverManager.getConnection(url, user, pass);
-            log.info("Database connection established.");
-            return conn;
-        } catch (ClassNotFoundException e) {
-            log.severe("Database driver not found: " + e.getMessage());
-            throw new SQLException("Driver not found", e);
-        } catch (SQLException e) {
-            log.severe("Database Connection Failed: " + e.getMessage());
-            throw e;
-        }
     }
 
     private static void runInitScript(Connection connection, String path) {
